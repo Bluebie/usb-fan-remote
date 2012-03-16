@@ -1,0 +1,14 @@
+set_pulse_code: 5
+get_pulse_code: 6
+get_pulse_code_length: 7
+send_pulse_code: 10
+set_broadcasting_gap: 16
+get_broadcasting_gap: 17
+get_cpu_frequency: 18
+set_broadcasting_frequency: 19
+get_broadcasting_frequency: 20
+set_indicator: 32
+get_indicator: 33
+set_indicator_luminance: 34
+get_indicator_luminance: 35
+set_indicator_as_debug_light: 36
