@@ -33,7 +33,7 @@ class InfraredRemote
   end
   
   def self.finalize(device)
-    device.usb_close
+    lambda { device.usb_close }
   end
   
   # set device in to default configuration
