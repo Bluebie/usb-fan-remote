@@ -23,14 +23,17 @@ class InfraredRemote
   end
   
   def initialize device
-    @device = device.open
+    device = device.open
+    @device = device
     @code_send_repeats = 10
     @usb_timeout = 60 # milliseconds
     @indicator_gamma = 2.2 # used by indicator_brightness to transform brightness to luminance and viceversa
     
-    ObjectSpace.define_finalizer(self) do
-      @device.usb_close
-    end
+    ObjectSpace.define_finalizer(self, self.class.finalize(device))
+  end
+  
+  def self.finalize(device)
+    device.usb_close
   end
   
   # set device in to default configuration
@@ -47,7 +50,7 @@ class InfraredRemote
   
   # this is pretty vague - the device promises it will have a gap at least this long, but could be much longer
   def broadcasting_gap
-    usb_get_broadcasting_gap(dataIn: 1).unpack('C').first
+    usb_get_broadcasting_gap(dataIn: 1).unpack('C').first / 1000.0
   end
   def broadcasting_gap= seconds
     raise "broadcasting gap cannot be greater than 0.255" unless seconds <= 0.255
@@ -79,6 +82,8 @@ class InfraredRemote
     IndicatorCodes[usb_get_indicator(dataIn: 1).unpack('C').first]
   end
   def indicator= color
+    color = :violet if color == :purple
+    color = false if color == :black
     raise "Unknown Color" unless IndicatorCodes.include? color
     usb_set_indicator(wValue: IndicatorCodes.index(color))
   end
@@ -107,12 +112,39 @@ class InfraredRemote
   
   # send the currently loaded pulse code
   def send! count = @code_send_repeats
-    usb_send_pulse_code(wValue: @code_send_repeats)
+    usb_send_pulse_code(wValue: count)
+  end
+  
+  def pronto code, repeats = 0
+    code = code.split(' ').map { |i| i.to_i(16) }
+    raw, freq, seq_1_length, seq_2_length = code.shift(4)
+    seq_1 = pronto_convert(code.shift(seq_1_length))
+    seq_2 = pronto_convert(code.shift(seq_2_length))
+    
+    frequency = 1000000 / (freq * 0.241246)
+    self.set_timer(frequency: frequency, duty: 0.3333) # setup device configuration from pronto code preamble
+    self.pulse_code = seq_1
+    regular_gap = self.broadcasting_gap
+    self.send! 1
+    
+    if repeats > 0
+      sleep((seq_1.reduce(:+) / 1000.0) + regular_gap)
+      self.pulse_code = seq_2
+      self.send! repeats
+    end
+  end
+  
+  def pronto_convert sequence
+    multiply = (9000.0 / 343.0)
+    sequence.map do |num|
+      (num * multiply).round
+    end
   end
   
   
   # install the available usb requests
-  Psych.load(open 'requests.yaml').each do |name, number|
+  dir = File.dirname(__FILE__)
+  Psych.load(open "#{dir}/requests.yaml").each do |name, number|
     define_method "usb_#{name}" do |*args|
       usb_send({ bRequest: number }.merge(*args))
     end
@@ -166,40 +198,5 @@ class InfraredRemote
     value |= c::EndpointDirections[:ENDPOINT_OUT] if opts.has_key? :dataOut
     value |= c::EndpointDirections[:ENDPOINT_IN] if opts.has_key? :dataIn
     return value
-  end
-end
-
-class FanRemote < InfraredRemote
-  # set if light is switched on or off
-  def lamp= light_on
-    self.pulse_code = case light_on
-      when true
-        [BIG, lil, BIG, lil, lil, BIG, BIG, lil, BIG, lil, lil, BIG, BIG, lil, lil, BIG, lil, BIG, lil, BIG, lil, BIG, lil]
-      when false
-        [BIG, lil, BIG, lil, lil, BIG, BIG, lil, BIG, lil, lil, BIG, lil, BIG, BIG, lil, lil, BIG, lil, BIG, lil, BIG, lil]
-      end
-    send!
-  end
-  alias_method :light=, :lamp=
-  
-  def speed= mode # takes in :off, :low, :medium, :high
-    self.pulse_code = case mode
-      when :off
-        [BIG, lil, BIG, lil, lil, BIG, BIG, lil, BIG, lil, lil, BIG, lil, BIG, lil, BIG, lil, BIG, lil, BIG, lil, BIG, BIG]
-      when :high
-        [BIG, lil, BIG, lil, lil, BIG, BIG, lil, BIG, lil, lil, BIG, lil, BIG, lil, BIG, lil, BIG, lil, BIG, BIG, lil, lil]
-      when :medium
-        [BIG, lil, BIG, lil, lil, BIG, BIG, lil, BIG, lil, lil, BIG, lil, BIG, lil, BIG, lil, BIG, BIG, lil, lil, BIG, lil]
-      when :low
-        [BIG, lil, BIG, lil, lil, BIG, BIG, lil, BIG, lil, lil, BIG, lil, BIG, lil, BIG, BIG, lil, lil, BIG, lil, BIG, lil]
-      end
-    
-    send!
-  end
-  
-  private
-  BIG = 1300
-  def lil
-    500
   end
 end

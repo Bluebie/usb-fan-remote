@@ -1,6 +1,6 @@
 #!/usr/local/bin/ruby
 Dir.chdir File.dirname(__FILE__)
-require_relative './fan-interface.rb'
+require_relative './fan-remote.rb'
 
 remote = FanRemote.first.reset
 remote.broadcasting_gap = 0.1
@@ -38,10 +38,10 @@ if ARGV[0] == 'set'
         remote.indicator_brightness = 1.0
         loop do
           remote.speed = high_speed
-          remote.indicator = :red
+          #remote.indicator = :red
           sleep PWMRate * proportion
           remote.speed = low_speed
-          remote.indicator = :green
+          #remote.indicator = :green
           sleep PWMRate * (1.0 - proportion)
         end
       rescue Interrupt => e
